@@ -5,20 +5,14 @@ module SmarterCSV
   class IncorrectOption < Exception; end
 
   def SmarterCSV.process(input, options={}, &block)   # first parameter: filename or input object with readline method
-    default_options = {:col_sep => ',' , :row_sep => $/ , :quote_char => '"', :force_simple_split => false , :verbose => false ,
-      :remove_empty_values => true, :remove_zero_values => false , :remove_values_matching => nil , :remove_empty_hashes => true , :strip_whitespace => true,
-      :convert_values_to_numeric => true, :strip_chars_from_headers => nil , :user_provided_headers => nil , :headers_in_file => true,
-      :comment_regexp => /^#/, :chunk_size => nil , :key_mapping_hash => nil , :downcase_header => true, :strings_as_keys => false, :file_encoding => 'utf-8',
-      :remove_unmapped_keys => false, :keep_original_headers => false, :value_converters => nil,
-    }
-    options = default_options.merge(options)
-    csv_options = options.select{|k,v| [:col_sep, :row_sep, :quote_char].include?(k)} # options.slice(:col_sep, :row_sep, :quote_char)
+    options = setup_options(options)
+    csv_options = setup_csv_options(options)
     headerA = []
     result = []
     old_row_sep = $/
     line_count = 0
     begin
-      f = input.respond_to?(:readline) ? input : File.open(input, "r:#{options[:file_encoding]}")
+      f = read_file(input, options)
 
       if options[:row_sep] == :auto
         options[:row_sep] =  SmarterCSV.guess_line_ending( f, options )
@@ -29,23 +23,9 @@ module SmarterCSV
       if options[:headers_in_file]        # extract the header line
         # process the header line in the CSV file..
         # the first line of a CSV file contains the header .. it might be commented out, so we need to read it anyhow
-        header = f.readline.sub(options[:comment_regexp],'').chomp(options[:row_sep])
         line_count += 1
-        header = header.gsub(options[:strip_chars_from_headers], '') if options[:strip_chars_from_headers]
-        if (header =~ %r{#{options[:quote_char]}}) and (! options[:force_simple_split])
-          file_headerA = CSV.parse( header, csv_options ).flatten.collect!{|x| x.nil? ? '' : x} # to deal with nil values from CSV.parse
-        else
-          file_headerA =  header.split(options[:col_sep])
-        end
-        file_headerA.map!{|x| x.gsub(%r/options[:quote_char]/,'') }
-        file_headerA.map!{|x| x.strip}  if options[:strip_whitespace]
-        unless options[:keep_original_headers]
-          file_headerA.map!{|x| x.gsub(/\s+|-+/,'_')}
-          file_headerA.map!{|x| x.downcase }   if options[:downcase_header]
-        end
-
 #        puts "HeaderA: #{file_headerA.join(' , ')}" if options[:verbose]
-
+        file_headerA = file_headers(f,options,csv_options)
         file_header_size = file_headerA.size
       else
         raise SmarterCSV::IncorrectOption , "ERROR [smarter_csv]: If :headers_in_file is set to false, you have to provide :user_provided_headers" if ! options.keys.include?(:user_provided_headers)
@@ -197,6 +177,11 @@ module SmarterCSV
     end
   end
 
+  def SmarterCSV.headers_count(input, options={})
+    options = setup_options(options)
+    f = read_file(input, options)
+    file_headers(f,options, setup_csv_options(options)).size
+  end
 #  def SmarterCSV.process_csv(*args)
 #    warn "[DEPRECATION] `process_csv` is deprecated.  Please use `process` instead."
 #    SmarterCSV.process(*args)
@@ -243,6 +228,40 @@ module SmarterCSV
     # find the key/value pair with the largest counter:
     k,v = counts.max_by{|k,v| v}
     return k                    # the most frequent one is it
+  end
+
+  def self.setup_options(options = {})
+    {:col_sep => ',' , :row_sep => $/ , :quote_char => '"', :force_simple_split => false , :verbose => false ,
+     :remove_empty_values => true, :remove_zero_values => false , :remove_values_matching => nil , :remove_empty_hashes => true , :strip_whitespace => true,
+     :convert_values_to_numeric => true, :strip_chars_from_headers => nil , :user_provided_headers => nil , :headers_in_file => true,
+     :comment_regexp => /^#/, :chunk_size => nil , :key_mapping_hash => nil , :downcase_header => true, :strings_as_keys => false, :file_encoding => 'utf-8',
+     :remove_unmapped_keys => false, :keep_original_headers => false, :value_converters => nil,
+    }.merge(options)
+  end
+
+  def self.file_headers(file, options, csv_options)
+    header = file.readline.sub(options[:comment_regexp],'').chomp(options[:row_sep])
+    header = header.gsub(options[:strip_chars_from_headers], '') if options[:strip_chars_from_headers]
+    if (header =~ %r{#{options[:quote_char]}}) and (! options[:force_simple_split])
+      file_headerA = CSV.parse( header, csv_options ).flatten.collect!{|x| x.nil? ? '' : x} # to deal with nil values from CSV.parse
+    else
+      file_headerA =  header.split(options[:col_sep])
+    end
+    file_headerA.map!{|x| x.gsub(%r/options[:quote_char]/,'') }
+    file_headerA.map!{|x| x.strip}  if options[:strip_whitespace]
+    unless options[:keep_original_headers]
+      file_headerA.map!{|x| x.gsub(/\s+|-+/,'_')}
+      file_headerA.map!{|x| x.downcase }   if options[:downcase_header]
+    end
+    file_headerA
+  end
+
+  def self.read_file(input, options)
+    input.respond_to?(:readline) ? input : File.open(input, "r:#{options[:file_encoding]}")
+  end
+
+  def self.setup_csv_options(options)
+    options.select{|k,v| [:col_sep, :row_sep, :quote_char].include?(k)} # options.slice(:col_sep, :row_sep, :quote_char)
   end
 end
 
